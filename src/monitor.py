@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Price Monitor - fetches prices and sends email alerts on changes."""
+"""Price Monitor - fetches prices and sends email alerts on changes.
+
+Orca.com is protected by Cloudflare Enterprise and blocks all automated
+server-side requests. We use ScraperAPI (free tier: 1000 req/month) which
+renders pages with a real headless browser to bypass Cloudflare.
+
+Setup: sign up at https://www.scraperapi.com (free, no credit card needed)
+       and add SCRAPERAPI_KEY as a GitHub Actions secret.
+"""
 
 import json
 import os
@@ -11,7 +19,6 @@ from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
-from urllib.parse import urlencode, quote
 
 import requests
 from bs4 import BeautifulSoup
@@ -19,51 +26,6 @@ from bs4 import BeautifulSoup
 BASE_DIR      = Path(__file__).parent.parent
 PRODUCTS_FILE = BASE_DIR / "products.json"
 PRICES_FILE   = BASE_DIR / "prices.json"
-
-# ── Proxy services (free, no auth needed) ───────────────────────────────────
-# We try each one in order until we get a successful response
-
-def proxy_url(target_url):
-    """Return list of proxy-wrapped URLs to try for a given target."""
-    encoded = quote(target_url, safe='')
-    return [
-        # AllOrigins - returns JSON with contents key
-        f"https://api.allorigins.win/get?url={encoded}",
-        # corsproxy.io
-        f"https://corsproxy.io/?{encoded}",
-        # thingproxy
-        f"https://thingproxy.freeboard.io/fetch/{target_url}",
-    ]
-
-
-def fetch_via_proxy(url, timeout=30):
-    """
-    Fetch a URL that returns 403 by routing through a free proxy.
-    Returns (text_content, status) or (None, error_code).
-    """
-    for proxy in proxy_url(url):
-        try:
-            print(f"  [proxy] trying {proxy[:70]}...")
-            r = requests.get(proxy, timeout=timeout,
-                             headers={"User-Agent": "Mozilla/5.0"})
-            if r.status_code == 200:
-                # AllOrigins wraps content in JSON
-                if "allorigins" in proxy:
-                    try:
-                        data = r.json()
-                        content = data.get("contents", "")
-                        if content:
-                            print(f"  [proxy] allorigins OK, {len(content)} chars")
-                            return content
-                    except Exception:
-                        pass
-                else:
-                    if len(r.text) > 500:
-                        print(f"  [proxy] OK, {len(r.text)} chars")
-                        return r.text
-        except Exception as e:
-            print(f"  [proxy] failed: {e}", file=sys.stderr)
-    return None
 
 
 def clean_price(value):
@@ -75,80 +37,13 @@ def clean_price(value):
     return float(m.group()) if m else None
 
 
-# ── Shopify JSON endpoint (no auth, no block) ────────────────────────────────
-
-def fetch_shopify_price(url, price_index=0):
-    handle = url.rstrip('/').split('/products/')[-1].split('?')[0]
-    domain = url.split('/products/')[0]
-    json_url = f"{domain}/products/{handle}.json"
-    print(f"  [Shopify JSON] {json_url}")
-    r = requests.get(json_url, timeout=20,
-                     headers={"User-Agent": "Mozilla/5.0"})
-    r.raise_for_status()
-    variants = r.json().get("product", {}).get("variants", [])
-    prices = sorted(set(float(v["price"]) for v in variants if v.get("price")))
-    print(f"  [Shopify] prices: {prices}")
-    idx = int(price_index) if price_index is not None else 0
-    return prices[idx] if idx < len(prices) else prices[0]
-
-
-# ── Orca via proxy ────────────────────────────────────────────────────────────
-
-ORCA_PRODUCT_URLS = {
-    0: "https://www.orca.com/es-es/neopreno-apnea-zen-hombre",
-    1: "https://www.orca.com/es-es/neopreno-apnea-mantra-hombre",
-}
-
-def fetch_orca_price(price_index=0):
-    """
-    Orca blocks GitHub IPs with 403. We use a free proxy to bypass.
-    We try the individual product pages (more reliable than category).
-    """
-    # First try the category page via proxy
-    category_url = "https://www.orca.com/es-es/hombre/neoprenos/apnea"
-    html = fetch_via_proxy(category_url)
-
-    if html:
-        prices = extract_prices_from_html(html)
-        if prices:
-            print(f"  [Orca category] prices found: {prices}")
-            idx = int(price_index) if price_index is not None else 0
-            return prices[idx] if idx < len(prices) else prices[0]
-
-    # Try individual product pages via proxy
-    product_url = ORCA_PRODUCT_URLS.get(int(price_index), ORCA_PRODUCT_URLS[0])
-    html = fetch_via_proxy(product_url)
-    if html:
-        prices = extract_prices_from_html(html)
-        if prices:
-            print(f"  [Orca product page] prices found: {prices}")
-            return prices[0]
-
-    # Last resort: try Google Cache
-    encoded = quote(category_url)
-    cache_url = f"https://webcache.googleusercontent.com/search?q=cache:{category_url}"
-    try:
-        r = requests.get(cache_url, timeout=20,
-                         headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0"})
-        if r.status_code == 200:
-            prices = extract_prices_from_html(r.text)
-            if prices:
-                print(f"  [Google cache] prices: {prices}")
-                idx = int(price_index) if price_index is not None else 0
-                return prices[idx] if idx < len(prices) else prices[0]
-    except Exception as e:
-        print(f"  [Google cache] failed: {e}", file=sys.stderr)
-
-    return None
-
-
-def extract_prices_from_html(html):
-    """Extract all plausible EUR prices from HTML content."""
+def extract_prices_from_html(html, min_price=10, max_price=5000):
+    """Extract all plausible prices from HTML, sorted ascending."""
     prices = []
-    seen = set()
-    soup = BeautifulSoup(html, "html.parser")
+    seen   = set()
+    soup   = BeautifulSoup(html, "html.parser")
 
-    # JSON-LD structured data (most reliable)
+    # 1. JSON-LD structured data
     for script in soup.find_all("script", type="application/ld+json"):
         try:
             data = json.loads(script.string or "")
@@ -158,48 +53,139 @@ def extract_prices_from_html(html):
                 if isinstance(offers, list):
                     for o in offers:
                         p = clean_price(str(o.get("price", "")))
-                        if p and 10 < p < 5000 and p not in seen:
+                        if p and min_price < p < max_price and p not in seen:
                             prices.append(p); seen.add(p)
                 else:
                     for key in ("price", "lowPrice"):
                         val = offers.get(key) or item.get(key)
                         if val:
                             p = clean_price(str(val))
-                            if p and 10 < p < 5000 and p not in seen:
+                            if p and min_price < p < max_price and p not in seen:
                                 prices.append(p); seen.add(p)
         except Exception:
             pass
 
-    # CSS selectors
-    for sel in ["[itemprop='price']", "[data-price]", ".price", ".price-item",
-                ".product-price", ".current-price", ".pdp-price",
-                ".c-product-price", ".product-card__price"]:
+    # 2. CSS selectors
+    for sel in [
+        "[itemprop='price']", "[data-price]",
+        ".price", ".price-item", ".product-price", ".current-price",
+        ".pdp-price", ".c-product-price", ".product-card__price",
+        ".price__current", ".price__sale", ".amount", ".money",
+    ]:
         for el in soup.select(sel):
-            if el.select(sel): continue
+            if el.select(sel):
+                continue
             p = clean_price(el.get_text())
-            if p and 10 < p < 5000 and p not in seen:
+            if p and min_price < p < max_price and p not in seen:
                 prices.append(p); seen.add(p)
 
-    # Inline JSON price patterns (SFCC / other platforms)
-    for m in re.finditer(r'"(?:price|salesPrice|listPrice|currentPrice)"\s*:\s*["\s]*(\d+(?:[.,]\d{1,2})?)', html):
+    # 3. Inline JSON price fields
+    for m in re.finditer(
+        r'"(?:price|salesPrice|listPrice|currentPrice)"\s*:\s*["\s]*(\d+(?:[.,]\d{1,2})?)',
+        html
+    ):
         p = clean_price(m.group(1))
-        if p and 10 < p < 5000 and p not in seen:
+        if p and min_price < p < max_price and p not in seen:
             prices.append(p); seen.add(p)
 
-    # Raw EUR patterns in text as last resort
+    # 4. EUR text patterns as last resort
     if not prices:
         for m in re.finditer(r'(\d{2,4}(?:[.,]\d{2}))\s*(?:€|EUR)', html):
             p = clean_price(m.group(1))
-            if p and 10 < p < 5000 and p not in seen:
+            if p and min_price < p < max_price and p not in seen:
                 prices.append(p); seen.add(p)
 
     return sorted(prices)
 
 
-# ── Generic scraper with proxy fallback ──────────────────────────────────────
+# ── ScraperAPI (bypasses Cloudflare with real headless browser) ──────────────
+
+def fetch_with_scraperapi(url, render_js=True):
+    """
+    Fetch via ScraperAPI which uses real Chrome to bypass Cloudflare.
+    Free tier: 1000 requests/month (plenty for 4x/day × 2 products = ~240/month).
+    Sign up: https://www.scraperapi.com
+    """
+    api_key = os.environ.get("SCRAPERAPI_KEY")
+    if not api_key:
+        print("  [ScraperAPI] SCRAPERAPI_KEY not set — skipping")
+        return None
+
+    params = {
+        "api_key": api_key,
+        "url": url,
+        "render": "true" if render_js else "false",
+        "country_code": "es",
+    }
+    try:
+        print(f"  [ScraperAPI] fetching {url}")
+        r = requests.get("https://api.scraperapi.com/", params=params, timeout=60)
+        print(f"  [ScraperAPI] status={r.status_code} size={len(r.text)}")
+        if r.status_code == 200 and len(r.text) > 1000:
+            return r.text
+        else:
+            print(f"  [ScraperAPI] response too small or error: {r.text[:200]}")
+    except Exception as e:
+        print(f"  [ScraperAPI] error: {e}", file=sys.stderr)
+    return None
+
+
+# ── Shopify JSON endpoint (always works, no auth needed) ─────────────────────
+
+def fetch_shopify_price(url, price_index=0):
+    handle   = url.rstrip('/').split('/products/')[-1].split('?')[0]
+    domain   = url.split('/products/')[0]
+    json_url = f"{domain}/products/{handle}.json"
+    print(f"  [Shopify JSON] {json_url}")
+    r = requests.get(json_url, timeout=20,
+                     headers={"User-Agent": "Mozilla/5.0"})
+    r.raise_for_status()
+    variants = r.json().get("product", {}).get("variants", [])
+    prices   = sorted(set(float(v["price"]) for v in variants if v.get("price")))
+    print(f"  [Shopify] prices found: {prices}")
+    idx = int(price_index) if price_index is not None else 0
+    return prices[idx] if idx < len(prices) else prices[0]
+
+
+# ── Orca via ScraperAPI ───────────────────────────────────────────────────────
+
+# Direct product page URLs (more reliable than category page)
+ORCA_URLS = {
+    0: "https://www.orca.com/es-es/neopreno-freedive-zen-hombre",
+    1: "https://www.orca.com/es-es/neopreno-freedive-mantra-hombre",
+}
+
+def fetch_orca_price(price_index=0):
+    idx         = int(price_index) if price_index is not None else 0
+    product_url = ORCA_URLS.get(idx, ORCA_URLS[0])
+
+    html = fetch_with_scraperapi(product_url, render_js=True)
+    if html:
+        prices = extract_prices_from_html(html)
+        if prices:
+            print(f"  [Orca] prices from ScraperAPI: {prices}")
+            return prices[0]
+        else:
+            print(f"  [Orca] ScraperAPI returned HTML but no prices found")
+            # Debug: show first 500 chars to help diagnose
+            print(f"  [Orca] HTML preview: {html[:300]}")
+
+    # Fallback: try the category page
+    category_url = "https://www.orca.com/es-es/hombre/neoprenos/apnea"
+    html = fetch_with_scraperapi(category_url, render_js=True)
+    if html:
+        prices = extract_prices_from_html(html)
+        if prices:
+            print(f"  [Orca category] prices: {prices}")
+            return prices[idx] if idx < len(prices) else prices[0]
+
+    return None
+
+
+# ── Generic fallback ──────────────────────────────────────────────────────────
 
 def fetch_generic(url, price_index=0):
-    # Try direct first with realistic headers
+    # Try direct with realistic browser headers
     for ua in [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 Version/17.4 Safari/605.1.15",
@@ -209,9 +195,8 @@ def fetch_generic(url, price_index=0):
                 "User-Agent": ua,
                 "Accept": "text/html,application/xhtml+xml,*/*",
                 "Accept-Language": "es-ES,es;q=0.9,fr;q=0.8,en;q=0.7",
-                "Connection": "keep-alive",
             })
-            if r.status_code == 200:
+            if r.status_code == 200 and len(r.text) > 1000:
                 prices = extract_prices_from_html(r.text)
                 if prices:
                     idx = int(price_index) if price_index is not None else 0
@@ -219,8 +204,8 @@ def fetch_generic(url, price_index=0):
         except Exception:
             pass
 
-    # Fallback: proxy
-    html = fetch_via_proxy(url)
+    # Fallback to ScraperAPI
+    html = fetch_with_scraperapi(url)
     if html:
         prices = extract_prices_from_html(html)
         if prices:
@@ -235,19 +220,19 @@ def fetch_generic(url, price_index=0):
 def get_price(url, css_selector=None, price_index=0):
     print(f"  URL: {url}")
 
-    # Shopify (has /products/ in URL and exposes .json)
+    # Shopify (always try .json endpoint first)
     if "/products/" in url:
         try:
             handle = url.rstrip('/').split('/products/')[-1].split('?')[0]
             domain = url.split('/products/')[0]
-            test = requests.get(f"{domain}/products/{handle}.json", timeout=10,
-                                headers={"User-Agent": "Mozilla/5.0"})
+            test   = requests.get(f"{domain}/products/{handle}.json", timeout=10,
+                                  headers={"User-Agent": "Mozilla/5.0"})
             if test.status_code == 200 and '"product"' in test.text:
                 return fetch_shopify_price(url, price_index)
         except Exception:
             pass
 
-    # Orca
+    # Orca → always use ScraperAPI
     if "orca.com" in url:
         return fetch_orca_price(price_index)
 
@@ -370,7 +355,7 @@ def main():
         time.sleep(5)
 
     PRICES_FILE.write_text(json.dumps(history, indent=2, ensure_ascii=False))
-    print(f"\nSaved price history to prices.json")
+    print(f"\nSaved price history.")
 
     if changes:
         try:
