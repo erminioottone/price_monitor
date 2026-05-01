@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Price Monitor - fetches prices via JSON APIs and sends email alerts."""
+"""Price Monitor - fetches prices and sends email alerts on changes."""
 
 import json
 import os
@@ -11,236 +11,251 @@ from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
+from urllib.parse import urlencode, quote
 
 import requests
+from bs4 import BeautifulSoup
 
 BASE_DIR      = Path(__file__).parent.parent
 PRODUCTS_FILE = BASE_DIR / "products.json"
 PRICES_FILE   = BASE_DIR / "prices.json"
 
-SESSION = requests.Session()
-SESSION.headers.update({
-    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
-    "Accept": "application/json, text/html, */*",
-    "Accept-Language": "es-ES,es;q=0.9,fr;q=0.8,en;q=0.7",
-})
+# ── Proxy services (free, no auth needed) ───────────────────────────────────
+# We try each one in order until we get a successful response
+
+def proxy_url(target_url):
+    """Return list of proxy-wrapped URLs to try for a given target."""
+    encoded = quote(target_url, safe='')
+    return [
+        # AllOrigins - returns JSON with contents key
+        f"https://api.allorigins.win/get?url={encoded}",
+        # corsproxy.io
+        f"https://corsproxy.io/?{encoded}",
+        # thingproxy
+        f"https://thingproxy.freeboard.io/fetch/{target_url}",
+    ]
+
+
+def fetch_via_proxy(url, timeout=30):
+    """
+    Fetch a URL that returns 403 by routing through a free proxy.
+    Returns (text_content, status) or (None, error_code).
+    """
+    for proxy in proxy_url(url):
+        try:
+            print(f"  [proxy] trying {proxy[:70]}...")
+            r = requests.get(proxy, timeout=timeout,
+                             headers={"User-Agent": "Mozilla/5.0"})
+            if r.status_code == 200:
+                # AllOrigins wraps content in JSON
+                if "allorigins" in proxy:
+                    try:
+                        data = r.json()
+                        content = data.get("contents", "")
+                        if content:
+                            print(f"  [proxy] allorigins OK, {len(content)} chars")
+                            return content
+                    except Exception:
+                        pass
+                else:
+                    if len(r.text) > 500:
+                        print(f"  [proxy] OK, {len(r.text)} chars")
+                        return r.text
+        except Exception as e:
+            print(f"  [proxy] failed: {e}", file=sys.stderr)
+    return None
 
 
 def clean_price(value):
-    """Convert any price representation to float."""
     s = str(value).strip()
-    s = re.sub(r'[€$£\s\xa0\u202f]', '', s)
+    s = re.sub(r'[€$£\s\xa0\u202f\u00a0]', '', s)
     s = re.sub(r'(\d)[.](\d{3})(?:[,]|$)', r'\1\2', s)
     s = s.replace(',', '.')
     m = re.search(r'\d+(?:\.\d{1,2})?', s)
     return float(m.group()) if m else None
 
 
-# ── Shopify JSON endpoint ────────────────────────────────────────────────────
+# ── Shopify JSON endpoint (no auth, no block) ────────────────────────────────
 
 def fetch_shopify_price(url, price_index=0):
-    """
-    Shopify stores expose /products/<handle>.json publicly.
-    Convert the product URL to the JSON endpoint and read variants[0].price.
-    """
-    # Extract handle: last path segment, strip query/hash
-    handle = url.rstrip('/').split('/')[-1].split('?')[0].split('#')[0]
+    handle = url.rstrip('/').split('/products/')[-1].split('?')[0]
     domain = url.split('/products/')[0]
     json_url = f"{domain}/products/{handle}.json"
-
     print(f"  [Shopify JSON] {json_url}")
-    resp = SESSION.get(json_url, timeout=20)
-    resp.raise_for_status()
-    data = resp.json()
-
-    variants = data.get("product", {}).get("variants", [])
-    if not variants:
-        return None
-
-    # Collect all unique prices sorted ascending
-    prices = sorted(set(
-        float(v["price"]) for v in variants if v.get("price")
-    ))
-    print(f"  [Shopify] prices found: {prices}")
+    r = requests.get(json_url, timeout=20,
+                     headers={"User-Agent": "Mozilla/5.0"})
+    r.raise_for_status()
+    variants = r.json().get("product", {}).get("variants", [])
+    prices = sorted(set(float(v["price"]) for v in variants if v.get("price")))
+    print(f"  [Shopify] prices: {prices}")
     idx = int(price_index) if price_index is not None else 0
     return prices[idx] if idx < len(prices) else prices[0]
 
 
-# ── Orca — try their API / JSON feed ────────────────────────────────────────
+# ── Orca via proxy ────────────────────────────────────────────────────────────
 
-def fetch_orca_category(url, price_index=0):
+ORCA_PRODUCT_URLS = {
+    0: "https://www.orca.com/es-es/neopreno-apnea-zen-hombre",
+    1: "https://www.orca.com/es-es/neopreno-apnea-mantra-hombre",
+}
+
+def fetch_orca_price(price_index=0):
     """
-    Orca uses a Salesforce Commerce Cloud backend.
-    We try their storefront JSON endpoint for the category.
-    Falls back to scraping with a Playwright-style UA if needed.
+    Orca blocks GitHub IPs with 403. We use a free proxy to bypass.
+    We try the individual product pages (more reliable than category).
     """
-    # Method 1: OCAPI / storefront JSON
-    # Orca ES store category ID for freedive wetsuits
-    category_slug = url.rstrip('/').split('/')[-1]
-    api_attempts = [
-        # Storefront open catalogue endpoint (no auth needed for prices)
-        f"https://www.orca.com/on/demandware.store/Sites-Orca_ES-Site/es_ES/Search-Show?cgid={category_slug}&format=ajax&sz=24",
-        f"https://www.orca.com/on/demandware.store/Sites-Orca_ES-Site/es_ES/Category-Show?cgid={category_slug}&format=page-element",
-    ]
+    # First try the category page via proxy
+    category_url = "https://www.orca.com/es-es/hombre/neoprenos/apnea"
+    html = fetch_via_proxy(category_url)
 
-    for api_url in api_attempts:
-        try:
-            print(f"  [Orca API] trying {api_url}")
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,*/*",
-                "Referer": "https://www.orca.com/",
-                "Accept-Language": "es-ES,es;q=0.9",
-                "X-Requested-With": "XMLHttpRequest",
-            }
-            r = SESSION.get(api_url, headers=headers, timeout=20)
-            if r.status_code == 200:
-                # Look for JSON price data embedded in response
-                prices = []
-                # Try JSON first
-                try:
-                    data = r.json()
-                    text = json.dumps(data)
-                except Exception:
-                    text = r.text
+    if html:
+        prices = extract_prices_from_html(html)
+        if prices:
+            print(f"  [Orca category] prices found: {prices}")
+            idx = int(price_index) if price_index is not None else 0
+            return prices[idx] if idx < len(prices) else prices[0]
 
-                # Extract prices from JSON or HTML
-                for m in re.finditer(r'"(?:price|salesPrice|listPrice)"\s*[:\s]+["\s]*(\d+(?:[.,]\d{1,2})?)', text):
-                    p = clean_price(m.group(1))
-                    if p and 10 < p < 5000:
-                        prices.append(p)
+    # Try individual product pages via proxy
+    product_url = ORCA_PRODUCT_URLS.get(int(price_index), ORCA_PRODUCT_URLS[0])
+    html = fetch_via_proxy(product_url)
+    if html:
+        prices = extract_prices_from_html(html)
+        if prices:
+            print(f"  [Orca product page] prices found: {prices}")
+            return prices[0]
 
-                if not prices:
-                    # Fallback: look for EUR price patterns in HTML
-                    for m in re.finditer(r'(\d{2,4})[.,](\d{2})\s*(?:€|EUR)', text):
-                        p = clean_price(f"{m.group(1)}.{m.group(2)}")
-                        if p and 10 < p < 5000:
-                            prices.append(p)
-
-                prices = sorted(set(prices))
-                if prices:
-                    print(f"  [Orca] prices found: {prices}")
-                    idx = int(price_index) if price_index is not None else 0
-                    return prices[idx] if idx < len(prices) else prices[0]
-        except Exception as e:
-            print(f"  [Orca] attempt failed: {e}", file=sys.stderr)
-
-    # Method 2: Direct product pages with known slugs
-    orca_products = [
-        ("https://www.orca.com/es-es/hombre/neoprenos/apnea/zen", 0),
-        ("https://www.orca.com/es-es/hombre/neoprenos/apnea/mantra", 0),
-    ]
-    for prod_url, _ in orca_products:
-        try:
-            print(f"  [Orca direct] {prod_url}")
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,*/*",
-                "Accept-Language": "es-ES,es;q=0.9",
-            }
-            r = SESSION.get(prod_url, headers=headers, timeout=20)
-            if r.status_code == 200:
-                # Look for JSON-LD structured data
-                for m in re.finditer(r'"price"\s*:\s*"?(\d+(?:[.,]\d{1,2})?)"?', r.text):
-                    p = clean_price(m.group(1))
-                    if p and 10 < p < 5000:
-                        print(f"  [Orca direct] found price {p}")
-                        return p
-        except Exception as e:
-            print(f"  [Orca direct] failed: {e}", file=sys.stderr)
-
-    return None
-
-
-# ── Generic fallback with rotating UAs ──────────────────────────────────────
-
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0",
-]
-
-def fetch_generic(url, price_index=0):
-    from bs4 import BeautifulSoup
-    for ua in USER_AGENTS:
-        try:
-            headers = {
-                "User-Agent": ua,
-                "Accept": "text/html,application/xhtml+xml,*/*;q=0.9",
-                "Accept-Language": "es-ES,es;q=0.9,fr;q=0.8,en;q=0.7",
-                "Accept-Encoding": "gzip, deflate, br",
-                "Connection": "keep-alive",
-                "Upgrade-Insecure-Requests": "1",
-            }
-            r = SESSION.get(url, headers=headers, timeout=25)
-            if r.status_code == 403:
-                continue
-            r.raise_for_status()
-            soup = BeautifulSoup(r.text, "html.parser")
-
-            prices = []
-            seen = set()
-
-            # JSON-LD
-            for script in soup.find_all("script", type="application/ld+json"):
-                try:
-                    data = json.loads(script.string or "")
-                    items = data if isinstance(data, list) else [data]
-                    for item in items:
-                        for key in ("price", "lowPrice"):
-                            val = (item.get("offers") or {}).get(key) or item.get(key)
-                            if val:
-                                p = clean_price(str(val))
-                                if p and 1 < p < 100000 and p not in seen:
-                                    prices.append(p); seen.add(p)
-                except Exception:
-                    pass
-
-            # CSS selectors
-            for sel in ["[itemprop='price']", "[data-price]", ".price", ".price-item",
-                        ".product-price", ".current-price", ".price__current",
-                        ".amount", ".money", ".woocommerce-Price-amount"]:
-                for el in soup.select(sel):
-                    if el.select(sel): continue
-                    p = clean_price(el.get_text())
-                    if p and 1 < p < 100000 and p not in seen:
-                        prices.append(p); seen.add(p)
-
-            prices = sorted(prices)
+    # Last resort: try Google Cache
+    encoded = quote(category_url)
+    cache_url = f"https://webcache.googleusercontent.com/search?q=cache:{category_url}"
+    try:
+        r = requests.get(cache_url, timeout=20,
+                         headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0"})
+        if r.status_code == 200:
+            prices = extract_prices_from_html(r.text)
             if prices:
+                print(f"  [Google cache] prices: {prices}")
                 idx = int(price_index) if price_index is not None else 0
                 return prices[idx] if idx < len(prices) else prices[0]
-        except Exception as e:
-            print(f"  [generic UA={ua[:30]}] error: {e}", file=sys.stderr)
+    except Exception as e:
+        print(f"  [Google cache] failed: {e}", file=sys.stderr)
+
     return None
 
 
-# ── Router ───────────────────────────────────────────────────────────────────
+def extract_prices_from_html(html):
+    """Extract all plausible EUR prices from HTML content."""
+    prices = []
+    seen = set()
+    soup = BeautifulSoup(html, "html.parser")
+
+    # JSON-LD structured data (most reliable)
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(script.string or "")
+            items = data if isinstance(data, list) else [data]
+            for item in items:
+                offers = item.get("offers") or {}
+                if isinstance(offers, list):
+                    for o in offers:
+                        p = clean_price(str(o.get("price", "")))
+                        if p and 10 < p < 5000 and p not in seen:
+                            prices.append(p); seen.add(p)
+                else:
+                    for key in ("price", "lowPrice"):
+                        val = offers.get(key) or item.get(key)
+                        if val:
+                            p = clean_price(str(val))
+                            if p and 10 < p < 5000 and p not in seen:
+                                prices.append(p); seen.add(p)
+        except Exception:
+            pass
+
+    # CSS selectors
+    for sel in ["[itemprop='price']", "[data-price]", ".price", ".price-item",
+                ".product-price", ".current-price", ".pdp-price",
+                ".c-product-price", ".product-card__price"]:
+        for el in soup.select(sel):
+            if el.select(sel): continue
+            p = clean_price(el.get_text())
+            if p and 10 < p < 5000 and p not in seen:
+                prices.append(p); seen.add(p)
+
+    # Inline JSON price patterns (SFCC / other platforms)
+    for m in re.finditer(r'"(?:price|salesPrice|listPrice|currentPrice)"\s*:\s*["\s]*(\d+(?:[.,]\d{1,2})?)', html):
+        p = clean_price(m.group(1))
+        if p and 10 < p < 5000 and p not in seen:
+            prices.append(p); seen.add(p)
+
+    # Raw EUR patterns in text as last resort
+    if not prices:
+        for m in re.finditer(r'(\d{2,4}(?:[.,]\d{2}))\s*(?:€|EUR)', html):
+            p = clean_price(m.group(1))
+            if p and 10 < p < 5000 and p not in seen:
+                prices.append(p); seen.add(p)
+
+    return sorted(prices)
+
+
+# ── Generic scraper with proxy fallback ──────────────────────────────────────
+
+def fetch_generic(url, price_index=0):
+    # Try direct first with realistic headers
+    for ua in [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 Version/17.4 Safari/605.1.15",
+    ]:
+        try:
+            r = requests.get(url, timeout=25, headers={
+                "User-Agent": ua,
+                "Accept": "text/html,application/xhtml+xml,*/*",
+                "Accept-Language": "es-ES,es;q=0.9,fr;q=0.8,en;q=0.7",
+                "Connection": "keep-alive",
+            })
+            if r.status_code == 200:
+                prices = extract_prices_from_html(r.text)
+                if prices:
+                    idx = int(price_index) if price_index is not None else 0
+                    return prices[idx] if idx < len(prices) else prices[0]
+        except Exception:
+            pass
+
+    # Fallback: proxy
+    html = fetch_via_proxy(url)
+    if html:
+        prices = extract_prices_from_html(html)
+        if prices:
+            idx = int(price_index) if price_index is not None else 0
+            return prices[idx] if idx < len(prices) else prices[0]
+
+    return None
+
+
+# ── Router ────────────────────────────────────────────────────────────────────
 
 def get_price(url, css_selector=None, price_index=0):
     print(f"  URL: {url}")
 
-    # Shopify stores
-    if "/products/" in url and "shopify" not in url:
-        # Check if it's a Shopify store by trying JSON endpoint
+    # Shopify (has /products/ in URL and exposes .json)
+    if "/products/" in url:
         try:
             handle = url.rstrip('/').split('/products/')[-1].split('?')[0]
             domain = url.split('/products/')[0]
-            test = SESSION.get(f"{domain}/products/{handle}.json", timeout=10)
-            if test.status_code == 200 and "product" in test.text:
+            test = requests.get(f"{domain}/products/{handle}.json", timeout=10,
+                                headers={"User-Agent": "Mozilla/5.0"})
+            if test.status_code == 200 and '"product"' in test.text:
                 return fetch_shopify_price(url, price_index)
         except Exception:
             pass
 
     # Orca
     if "orca.com" in url:
-        return fetch_orca_category(url, price_index)
+        return fetch_orca_price(price_index)
 
     # Generic
     return fetch_generic(url, price_index)
 
 
-# ── Email ────────────────────────────────────────────────────────────────────
+# ── Email ─────────────────────────────────────────────────────────────────────
 
 def send_email(subject, body_html):
     smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
@@ -269,8 +284,7 @@ def build_email_body(changes):
         color = "#437a22" if diff < 0 else "#a12c7b"
         arrow = "v" if diff < 0 else "^"
         rows += (
-            "<tr>"
-            "<td style='padding:10px 16px;border-bottom:1px solid #e5e7eb'>"
+            "<tr><td style='padding:10px 16px;border-bottom:1px solid #e5e7eb'>"
             "<a href='" + c["url"] + "' style='color:#01696f;font-weight:600;text-decoration:none'>"
             + c["name"] + "</a></td>"
             "<td style='padding:10px 16px;border-bottom:1px solid #e5e7eb;text-align:center'>"
@@ -278,11 +292,9 @@ def build_email_body(changes):
             "<td style='padding:10px 16px;border-bottom:1px solid #e5e7eb;text-align:center;"
             "font-weight:700;color:" + color + "'>" + f"{c['new']:.2f}" + " EUR</td>"
             "<td style='padding:10px 16px;border-bottom:1px solid #e5e7eb;text-align:center'>"
-            + arrow + " " + label + " " + f"{abs(pct):.1f}" + "%</td>"
-            "</tr>"
+            + arrow + " " + label + " " + f"{abs(pct):.1f}" + "%</td></tr>"
         )
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    n  = len(changes)
     return (
         "<!DOCTYPE html><html><head><meta charset='utf-8'></head>"
         "<body style='font-family:system-ui,sans-serif;background:#f7f6f2;margin:0;padding:24px'>"
@@ -290,24 +302,24 @@ def build_email_body(changes):
         "box-shadow:0 4px 16px rgba(0,0,0,.08);overflow:hidden'>"
         "<div style='background:#01696f;padding:24px 32px'>"
         "<h1 style='color:#fff;margin:0;font-size:20px'>Price Monitor Alert</h1>"
-        "<p style='color:#cedcd8;margin:4px 0 0;font-size:14px'>" + ts + "</p>"
-        "</div><div style='padding:24px 32px'>"
+        "<p style='color:#cedcd8;margin:4px 0 0;font-size:14px'>" + ts + "</p></div>"
+        "<div style='padding:24px 32px'>"
         "<p style='color:#28251d;margin:0 0 20px'>Price changes detected for <strong>"
-        + str(n) + "</strong> product(s):</p>"
+        + str(len(changes)) + "</strong> product(s):</p>"
         "<table style='width:100%;border-collapse:collapse;font-size:14px'>"
         "<thead><tr style='background:#f3f0ec'>"
         "<th style='padding:10px 16px;text-align:left;color:#7a7974'>Product</th>"
         "<th style='padding:10px 16px;text-align:center;color:#7a7974'>Old Price</th>"
         "<th style='padding:10px 16px;text-align:center;color:#7a7974'>New Price</th>"
         "<th style='padding:10px 16px;text-align:center;color:#7a7974'>Change</th>"
-        "</tr></thead><tbody>" + rows + "</tbody></table>"
-        "</div><div style='padding:16px 32px;background:#f7f6f2;border-top:1px solid #e5e7eb'>"
+        "</tr></thead><tbody>" + rows + "</tbody></table></div>"
+        "<div style='padding:16px 32px;background:#f7f6f2;border-top:1px solid #e5e7eb'>"
         "<p style='color:#7a7974;font-size:12px;margin:0'>Sent by your GitHub Actions Price Monitor</p>"
         "</div></div></body></html>"
     )
 
 
-# ── Main ─────────────────────────────────────────────────────────────────────
+# ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
     if not PRODUCTS_FILE.exists():
@@ -353,7 +365,7 @@ def main():
                 print(f"  ALERT: {old_price:.2f} -> {price:.2f} EUR ({diff_pct:.1f}%)")
                 changes.append({"name": name, "url": url, "old": old_price, "new": price})
             else:
-                print(f"  No significant change (was {old_price:.2f}, threshold: {threshold}%)")
+                print(f"  No change (was {old_price:.2f}, threshold: {threshold}%)")
 
         time.sleep(5)
 
