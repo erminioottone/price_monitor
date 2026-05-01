@@ -22,6 +22,30 @@
       {
         "price": 160.0,
         "checked_at": "2026-05-01T13:57:36.759596+00:00"
+      },
+      {
+        "price": 160.0,
+        "checked_at": "2026-05-01T15:45:11.268702+00:00"
+      }
+    ]
+  },
+  "orca-zen-freedive": {
+    "name": "Orca Neopreno Freedive Zen Hombre",
+    "url": "https://www.orca.com/es-es/hombre/neoprenos/apnea",
+    "history": [
+      {
+        "price": 20.0,
+        "checked_at": "2026-05-01T15:45:11.268702+00:00"
+      }
+    ]
+  },
+  "orca-mantra-freedive": {
+    "name": "Orca Neopreno Freedive Mantra Hombre",
+    "url": "https://www.orca.com/es-es/hombre/neoprenos/apnea",
+    "history": [
+      {
+        "price": 449.0,
+        "checked_at": "2026-05-01T15:45:11.268702+00:00"
       }
     ]
   }
