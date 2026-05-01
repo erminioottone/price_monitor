@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Price Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root,[data-theme="light"]{--bg:#f7f6f2;--sur:#f9f8f5;--sur2:#fbfbf9;--surO:#f3f0ec;--bor:#d4d1ca;--div:#dcd9d5;--tx:#28251d;--txM:#7a7974;--txF:#bab9b4;--pri:#01696f;--priH:#0c4e54;--priHL:#cedcd8;--ok:#437a22;--okHL:#d4dfcc;--err:#a12c7b;--errHL:#e0ced7;--warn:#964219;--warnHL:#ddcfc6;--gold:#d19900;--goldHL:#e9e0c6;--sh1:0 1px 2px rgba(0,0,0,.06);--sh2:0 4px 12px rgba(0,0,0,.08);--sh3:0 12px 32px rgba(0,0,0,.12);--rsm:.375rem;--rmd:.5rem;--rlg:.75rem;--rxl:1rem;--rf:9999px;--fb:'Inter',sans-serif;--fm:'JetBrains Mono',monospace;--tr:180ms cubic-bezier(.16,1,.3,1);--xs:clamp(.75rem,.7rem + .25vw,.875rem);--sm:clamp(.875rem,.8rem + .35vw,1rem);--base:clamp(1rem,.95rem + .25vw,1.125rem);--lg:clamp(1.125rem,1rem + .75vw,1.5rem);--xl:clamp(1.5rem,1.2rem + 1.25vw,2.25rem);--s1:.25rem;--s2:.5rem;--s3:.75rem;--s4:1rem;--s5:1.25rem;--s6:1.5rem;--s8:2rem;--s10:2.5rem;--s12:3rem;--s16:4rem}
+[data-theme="dark"]{--bg:#171614;--sur:#1c1b19;--sur2:#201f1d;--surO:#1d1c1a;--bor:#393836;--div:#262523;--tx:#cdccca;--txM:#797876;--txF:#5a5957;--pri:#4f98a3;--priH:#227f8b;--priHL:#313b3b;--ok:#6daa45;--okHL:#3a4435;--err:#d163a7;--errHL:#4c3d46;--warn:#bb653b;--warnHL:#564942;--gold:#e8af34;--goldHL:#4d4332;--sh1:0 1px 2px rgba(0,0,0,.2);--sh2:0 4px 12px rgba(0,0,0,.3);--sh3:0 12px 32px rgba(0,0,0,.4)}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-font-smoothing:antialiased}
+body{min-height:100dvh;font-family:var(--fb);font-size:var(--base);color:var(--tx);background:var(--bg);line-height:1.6}
+img,svg{display:block}
+button{cursor:pointer;font:inherit;color:inherit;background:none;border:none}
+input,select{font:inherit;color:inherit}
+a,button,input,select{transition:color var(--tr),background var(--tr),border-color var(--tr),box-shadow var(--tr),opacity var(--tr)}
+:focus-visible{outline:2px solid var(--pri);outline-offset:3px;border-radius:var(--rsm)}
+.app{display:grid;grid-template-rows:auto 1fr;min-height:100dvh}
+header{position:sticky;top:0;z-index:100;background:var(--sur);border-bottom:1px solid var(--bor);box-shadow:var(--sh1);padding:var(--s3) var(--s6);display:flex;align-items:center;justify-content:space-between;gap:var(--s4)}
+.logo{display:flex;align-items:center;gap:var(--s3)}
+.logo-icon{width:36px;height:36px;flex-shrink:0}
+.logo-text{font-size:var(--sm);font-weight:700;letter-spacing:-.02em;line-height:1}
+.logo-sub{font-size:var(--xs);color:var(--txM);font-weight:400}
+.hdr{display:flex;align-items:center;gap:var(--s2)}
+main{padding:var(--s8) var(--s6);max-width:1100px;margin:0 auto;width:100%}
+.btn{display:inline-flex;align-items:center;gap:var(--s2);padding:var(--s2) var(--s4);border-radius:var(--rmd);font-size:var(--sm);font-weight:500;border:1px solid transparent;white-space:nowrap}
+.btnP{background:var(--pri);color:#fff;border-color:var(--pri)}.btnP:hover{background:var(--priH);border-color:var(--priH)}
+.btnG{background:transparent;color:var(--txM);border-color:var(--bor)}.btnG:hover{background:var(--surO);color:var(--tx)}
+.btnD{background:var(--errHL);color:var(--err);border-color:transparent}.btnD:hover{opacity:.8}
+.bsm{padding:var(--s1) var(--s3);font-size:var(--xs)}.bic{padding:var(--s2);border-radius:var(--rmd)}
+.card{background:var(--sur);border:1px solid var(--bor);border-radius:var(--rxl);box-shadow:var(--sh1);overflow:hidden}
+.ch{padding:var(--s4) var(--s6);border-bottom:1px solid var(--div);display:flex;align-items:center;justify-content:space-between;gap:var(--s4)}
+.cb{padding:var(--s6)}
+.ct{font-size:var(--sm);font-weight:600;color:var(--tx)}
+.cs{font-size:var(--xs);color:var(--txM);margin-top:2px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:var(--s4);margin-bottom:var(--s8)}
+.sc{background:var(--sur);border:1px solid var(--bor);border-radius:var(--rlg);padding:var(--s4) var(--s5);box-shadow:var(--sh1)}
+.sl{font-size:var(--xs);color:var(--txM);text-transform:uppercase;letter-spacing:.06em;margin-bottom:var(--s2)}
+.sv{font-size:var(--xl);font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.gn{color:var(--ok)}.gd{color:var(--gold)}
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:var(--sm)}
+th{text-align:left;padding:var(--s3) var(--s4);font-size:var(--xs);font-weight:600;color:var(--txM);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--bor);background:var(--surO)}
+td{padding:var(--s3) var(--s4);border-bottom:1px solid var(--div);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--surO)}
+.pn{font-weight:500;color:var(--tx)}
+.pu{font-size:var(--xs);color:var(--txM);font-family:var(--fm);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;margin-top:2px}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:var(--rf);font-size:var(--xs);font-weight:500}
+.ba{background:var(--okHL);color:var(--ok)}.bp{background:var(--surO);color:var(--txM)}
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);z-index:200;display:flex;align-items:center;justify-content:center;padding:var(--s4);opacity:0;pointer-events:none;transition:opacity var(--tr)}
+.ov.open{opacity:1;pointer-events:auto}
+.modal{background:var(--sur);border:1px solid var(--bor);border-radius:var(--rxl);box-shadow:var(--sh3);width:100%;max-width:560px;max-height:90dvh;overflow-y:auto;transform:translateY(16px) scale(.97);transition:transform var(--tr)}
+.ov.open .modal{transform:translateY(0) scale(1)}
+.mh{padding:var(--s5) var(--s6);border-bottom:1px solid var(--div);display:flex;align-items:center;justify-content:space-between}
+.mt{font-size:var(--base);font-weight:600}
+.mb{padding:var(--s6)}
+.mf{padding:var(--s4) var(--s6);border-top:1px solid var(--div);display:flex;justify-content:flex-end;gap:var(--s3)}
+.fg{margin-bottom:var(--s5)}
+label{display:block;font-size:var(--sm);font-weight:500;margin-bottom:var(--s2);color:var(--tx)}
+.fh{font-size:var(--xs);color:var(--txM);margin-top:var(--s1)}
+input[type="text"],input[type="url"],input[type="number"]{width:100%;padding:var(--s2) var(--s3);background:var(--sur2);border:1px solid var(--bor);border-radius:var(--rmd);font-size:var(--sm);color:var(--tx);outline:none}
+input[type="text"]:focus,input[type="url"]:focus,input[type="number"]:focus{border-color:var(--pri);box-shadow:0 0 0 3px rgba(79,152,163,.2)}
+.ob{background:var(--surO);border:1px solid var(--bor);border-radius:var(--rlg);padding:var(--s4);font-family:var(--fm);font-size:var(--xs);line-height:1.7;overflow-x:auto;white-space:pre;color:var(--tx);max-height:300px;overflow-y:auto}
+.al{padding:var(--s3) var(--s4);border-radius:var(--rmd);font-size:var(--sm);margin-bottom:var(--s6);display:none}
+.al.show{display:block}
+.als{background:var(--okHL);color:var(--ok)}.ali{background:var(--priHL);color:var(--pri)}
+.em{text-align:center;padding:var(--s16) var(--s8);color:var(--txM)}
+.em h3{color:var(--tx);font-size:var(--base);margin-bottom:var(--s2)}
+.em p{font-size:var(--sm);max-width:36ch;margin:0 auto var(--s6)}
+.steps{display:flex;flex-direction:column;gap:var(--s4)}
+.step{display:flex;gap:var(--s4);align-items:flex-start}
+.sn{flex-shrink:0;width:28px;height:28px;border-radius:var(--rf);background:var(--pri);color:#fff;display:flex;align-items:center;justify-content:center;font-size:var(--xs);font-weight:700;margin-top:2px}
+.sb{flex:1}
+.stit{font-size:var(--sm);font-weight:600;margin-bottom:var(--s1)}
+.sdesc{font-size:var(--xs);color:var(--txM);line-height:1.7}
+code{font-family:var(--fm);font-size:.85em;background:var(--surO);padding:1px 6px;border-radius:var(--rsm);color:var(--pri)}
+a{color:var(--pri)}
+@media(max-width:640px){header{padding:var(--s3) var(--s4)}main{padding:var(--s5) var(--s4)}.stats{grid-template-columns:1fr 1fr}th:nth-child(3),td:nth-child(3),th:nth-child(4),td:nth-child(4){display:none}}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+  <div class="logo">
+    <svg class="logo-icon" viewBox="0 0 36 36" fill="none" aria-label="Price Monitor">
+      <rect width="36" height="36" rx="8" fill="var(--pri)"/>
+      <text x="18" y="25" text-anchor="middle" font-family="Georgia,serif" font-size="22" font-weight="700" fill="white">€</text>
+    </svg>
+    <div><div class="logo-text">Price Monitor</div><div class="logo-sub">GitHub Actions · Free tier</div></div>
+  </div>
+  <div class="hdr">
+    <button class="btn btnG bsm" id="setupBtn">⚙️ Setup Guide</button>
+    <button class="btn btnP bsm" id="addBtn">＋ Add Product</button>
+    <button class="btn bic btnG" data-theme-toggle aria-label="Toggle theme">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+  </div>
+</header>
+<main>
+  <div id="alertBox" class="al"></div>
+  <div class="stats">
+    <div class="sc"><div class="sl">Products tracked</div><div class="sv" id="sT">0</div></div>
+    <div class="sc"><div class="sl">Active</div><div class="sv gn" id="sA">0</div></div>
+    <div class="sc"><div class="sl">Check frequency</div><div class="sv gd" style="font-size:var(--lg)">Every 6h</div></div>
+    <div class="sc"><div class="sl">Monthly cost</div><div class="sv gn" style="font-size:var(--lg)">Free</div></div>
+  </div>
+  <div class="card" style="margin-bottom:var(--s8)">
+    <div class="ch">
+      <div><div class="ct">Monitored Products</div><div class="cs">Stored in <code>products.json</code> in your repo</div></div>
+      <button class="btn btnG bsm" id="exportBtn">⬇️ Download JSON</button>
+    </div>
+    <div class="tw">
+      <table id="tbl">
+        <thead><tr><th>Product</th><th>Threshold</th><th>CSS Selector</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div id="empty" class="em">
+        <div style="font-size:48px;margin-bottom:var(--s4)">🛒</div>
+        <h3>No products yet</h3>
+        <p>Add a product URL to start monitoring prices automatically.</p>
+        <button class="btn btnP" id="addBtn2">＋ Add your first product</button>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="ch">
+      <div><div class="ct">products.json — Ready to commit</div><div class="cs">Copy into <code>products.json</code> on GitHub, then commit</div></div>
+      <button class="btn btnP bsm" id="copyBtn">📋 Copy to clipboard</button>
+    </div>
+    <div class="cb"><div class="ob" id="jsonOut">[ ]</div></div>
+  </div>
+</main>
+</div>
+
+<!-- ADD/EDIT MODAL -->
+<div class="ov" id="prodOv" role="dialog" aria-modal="true" aria-labelledby="modTitle">
+  <div class="modal">
+    <div class="mh"><span class="mt" id="modTitle">Add Product</span><button class="btn bic btnG" id="closeM" aria-label="Close">✕</button></div>
+    <div class="mb">
+      <div class="fg"><label for="fN">Product name *</label><input type="text" id="fN" placeholder="e.g. Sony WH-1000XM5 Headphones"></div>
+      <div class="fg"><label for="fU">Product URL *</label><input type="url" id="fU" placeholder="https://www.amazon.fr/dp/..."><p class="fh">Works with Amazon, Fnac, Cdiscount, Darty, Boulanger and most e-commerce sites.</p></div>
+      <div class="fg"><label for="fS">CSS Selector <em style="font-weight:400;color:var(--txM)">(optional)</em></label><input type="text" id="fS" placeholder=".price, #product-price"><p class="fh">Leave empty for auto-detection. Right-click the price → Inspect → copy selector.</p></div>
+      <div class="fg"><label for="fT">Alert threshold (%)</label><input type="number" id="fT" value="1" min="0" max="100" step="0.5"><p class="fh">Alert when price changes by at least this %. Use 0 for any change.</p></div>
+      <div class="fg"><label style="display:flex;align-items:center;gap:var(--s2);cursor:pointer"><input type="checkbox" id="fAc" checked style="width:auto"> Active (monitor this product)</label></div>
+    </div>
+    <div class="mf"><button class="btn btnG" id="cancelM">Cancel</button><button class="btn btnP" id="saveM">Save product</button></div>
+  </div>
+</div>
+
+<!-- SETUP MODAL -->
+<div class="ov" id="setupOv" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
+  <div class="modal" style="max-width:680px">
+    <div class="mh"><span class="mt" id="setupTitle">🚀 Setup Guide — 10 minutes, one-time</span><button class="btn bic btnG" id="closeS" aria-label="Close">✕</button></div>
+    <div class="mb">
+      <div class="steps">
+        <div class="step"><div class="sn">1</div><div class="sb"><div class="stit">Create a GitHub repository</div><div class="sdesc">Go to <a href="https://github.com/new" target="_blank" rel="noopener">github.com/new</a> → create a new <strong>private</strong> repo named <code>price-monitor</code>.</div></div></div>
+        <div class="step"><div class="sn">2</div><div class="sb"><div class="stit">Upload the project files</div><div class="sdesc">Unzip the downloaded archive. In GitHub, click <em>Add file → Upload files</em> and upload all files keeping the folder structure.<br>Required: <code>src/monitor.py</code> · <code>products.json</code> · <code>prices.json</code> · <code>requirements.txt</code> · <code>.github/workflows/price-monitor.yml</code></div></div></div>
+        <div class="step"><div class="sn">3</div><div class="sb"><div class="stit">Add 5 repository secrets</div><div class="sdesc">Settings → Secrets and variables → Actions → New repository secret:<br><br><code>SMTP_HOST</code> → <code>smtp.gmail.com</code><br><code>SMTP_PORT</code> → <code>587</code><br><code>SMTP_USER</code> → your Gmail address<br><code>SMTP_PASS</code> → Gmail App Password (step 4)<br><code>NOTIFY_EMAIL</code> → email to receive alerts<br><br><em>Outlook users: SMTP_HOST = smtp.office365.com</em></div></div></div>
+        <div class="step"><div class="sn">4</div><div class="sb"><div class="stit">Create a Gmail App Password</div><div class="sdesc">1. Enable 2FA on your Google account.<br>2. Go to <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a><br>3. Generate for "Mail" — use the 16-char code as <code>SMTP_PASS</code>.</div></div></div>
+        <div class="step"><div class="sn">5</div><div class="sb"><div class="stit">Add products using this dashboard</div><div class="sdesc">Click <strong>+ Add Product</strong>, fill in the details, then click <strong>Copy to clipboard</strong> under the JSON section. In GitHub, open <code>products.json</code>, click the pencil icon, paste and commit.</div></div></div>
+        <div class="step"><div class="sn">6</div><div class="sb"><div class="stit">Test manually</div><div class="sdesc">In GitHub: Actions → Price Monitor → Run workflow. Check logs to confirm everything works.</div></div></div>
+      </div>
+      <div style="margin-top:var(--s8);padding:var(--s4);background:var(--warnHL);border-radius:var(--rmd);border-left:3px solid var(--warn)">
+        <strong style="color:var(--warn);font-size:var(--sm)">GitHub Free Tier usage</strong>
+        <p style="font-size:var(--xs);color:var(--txM);margin-top:var(--s1)">4 runs/day × ~1 min ≈ 120 min/month. Free tier includes 2,000 min/month for private repos — you use only 6%.</p>
+      </div>
+    </div>
+    <div class="mf"><button class="btn btnP" id="closeSOk">Got it! 🚀</button></div>
+  </div>
+</div>
+
+<script>
+let products=[];try{products=JSON.parse(localStorage.getItem('pm')||'[]')}catch(e){}
+let eid=null;
+function uid(){return 'p-'+Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function alert2(m,t='s'){const b=document.getElementById('alertBox');b.textContent=m;b.className='al al'+(t==='s'?'s':'i')+' show';setTimeout(()=>b.className='al',4500)}
+function save(){try{localStorage.setItem('pm',JSON.stringify(products))}catch(e){}}
+function render(){
+  const tb=document.getElementById('tbody'),em=document.getElementById('empty'),th=document.querySelector('#tbl thead');
+  document.getElementById('sT').textContent=products.length;
+  document.getElementById('sA').textContent=products.filter(p=>p.active!==false).length;
+  if(!products.length){em.style.display='';th.style.display='none'}else{em.style.display='none';th.style.display=''}
+  tb.innerHTML='';
+  products.forEach(p=>{
+    const a=p.active!==false,tr=document.createElement('tr');
+    tr.innerHTML=`<td><div class="pn">${esc(p.name)}</div><a class="pu" href="${esc(p.url)}" target="_blank" rel="noopener" title="${esc(p.url)}">${esc(p.url)}</a></td><td><span style="font-family:var(--fm);font-size:var(--xs)">${p.thr??1}%</span></td><td><code>${p.sel?esc(p.sel):'—'}</code></td><td><span class="badge ${a?'ba':'bp'}">${a?'● Active':'○ Paused'}</span></td><td style="text-align:right;white-space:nowrap"><button class="btn btnG bsm" onclick="openM('${p.id}')">✏️ Edit</button> <button class="btn btnD bsm" onclick="delP('${p.id}')">🗑</button></td>`;
+    tb.appendChild(tr);
+  });
+  const ex=products.map(p=>({id:p.id,name:p.name,url:p.url,css_selector:p.sel||null,threshold_pct:p.thr??1,active:p.active!==false}));
+  document.getElementById('jsonOut').textContent=JSON.stringify(ex,null,2);
+}
+function openM(id){
+  eid=id||null;const p=id?products.find(x=>x.id===id):null;
+  document.getElementById('modTitle').textContent=id?'Edit Product':'Add Product';
+  document.getElementById('fN').value=p?.name||'';document.getElementById('fU').value=p?.url||'';
+  document.getElementById('fS').value=p?.sel||'';document.getElementById('fT').value=p?.thr??1;
+  document.getElementById('fAc').checked=p?.active!==false;
+  document.getElementById('prodOv').classList.add('open');
+  setTimeout(()=>document.getElementById('fN').focus(),100);
+}
+function closeM(){document.getElementById('prodOv').classList.remove('open');eid=null}
+function saveM(){
+  const n=document.getElementById('fN').value.trim(),u=document.getElementById('fU').value.trim();
+  const s=document.getElementById('fS').value.trim(),t=parseFloat(document.getElementById('fT').value)||1;
+  const a=document.getElementById('fAc').checked;
+  if(!n){document.getElementById('fN').focus();return}if(!u){document.getElementById('fU').focus();return}
+  if(eid){const i=products.findIndex(p=>p.id===eid);products[i]={...products[i],name:n,url:u,sel:s||null,thr:t,active:a};alert2('"'+n+'" updated.')}
+  else{products.push({id:uid(),name:n,url:u,sel:s||null,thr:t,active:a});alert2('"'+n+'" added! Copy the JSON below and commit.')}
+  save();render();closeM();
+}
+function delP(id){const p=products.find(x=>x.id===id);if(!confirm('Remove "'+p?.name+'"?'))return;products=products.filter(x=>x.id!==id);save();render();alert2('Removed.')}
+document.getElementById('addBtn').addEventListener('click',()=>openM());
+document.getElementById('addBtn2').addEventListener('click',()=>openM());
+document.getElementById('closeM').addEventListener('click',closeM);
+document.getElementById('cancelM').addEventListener('click',closeM);
+document.getElementById('saveM').addEventListener('click',saveM);
+document.getElementById('prodOv').addEventListener('click',e=>{if(e.target===document.getElementById('prodOv'))closeM()});
+document.getElementById('setupBtn').addEventListener('click',()=>document.getElementById('setupOv').classList.add('open'));
+['closeS','closeSOk'].forEach(id=>document.getElementById(id).addEventListener('click',()=>document.getElementById('setupOv').classList.remove('open')));
+document.getElementById('setupOv').addEventListener('click',e=>{if(e.target===document.getElementById('setupOv'))document.getElementById('setupOv').classList.remove('open')});
+document.getElementById('copyBtn').addEventListener('click',()=>{const t=document.getElementById('jsonOut').textContent;navigator.clipboard.writeText(t).then(()=>alert2('JSON copied! Paste into products.json on GitHub and commit.')).catch(()=>alert2('Select the text above and copy manually.','i'))});
+document.getElementById('exportBtn').addEventListener('click',()=>{const t=document.getElementById('jsonOut').textContent,blob=new Blob([t],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='products.json';a.click();URL.revokeObjectURL(a.href)});
+(function(){const t=document.querySelector('[data-theme-toggle]'),r=document.documentElement;let d=r.getAttribute('data-theme')||'dark';t&&t.addEventListener('click',()=>{d=d==='dark'?'light':'dark';r.setAttribute('data-theme',d);t.innerHTML=d==='dark'?'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>':'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>'})})();
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){document.getElementById('prodOv').classList.remove('open');document.getElementById('setupOv').classList.remove('open')}if(e.key==='Enter'&&document.getElementById('prodOv').classList.contains('open'))saveM()});
+render();
+if(!products.length&&!localStorage.getItem('pm_seen')){localStorage.setItem('pm_seen','1');setTimeout(()=>document.getElementById('setupOv').classList.add('open'),700)}
+</script>
+</body>
+</html>

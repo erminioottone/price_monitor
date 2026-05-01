@@ -1,0 +1,29 @@
+[
+  {
+    "id": "orca-zen-freedive",
+    "name": "Orca Neopreno Freedive Zen Hombre",
+    "url": "https://www.orca.com/es-es/hombre/neoprenos/apnea",
+    "css_selector": null,
+    "price_index": 0,
+    "threshold_pct": 2,
+    "active": true
+  },
+  {
+    "id": "orca-mantra-freedive",
+    "name": "Orca Neopreno Freedive Mantra Hombre",
+    "url": "https://www.orca.com/es-es/hombre/neoprenos/apnea",
+    "css_selector": null,
+    "price_index": 1,
+    "threshold_pct": 2,
+    "active": true
+  },
+  {
+    "id": "xero-scrambler-trail",
+    "name": "Xero Shoes Scrambler Trail Low WP Men",
+    "url": "https://xeroshoes.eu/products/scrambler-trail-low-wp-men",
+    "css_selector": null,
+    "price_index": 0,
+    "threshold_pct": 2,
+    "active": true
+  }
+]
