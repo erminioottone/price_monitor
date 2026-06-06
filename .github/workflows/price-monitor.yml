@@ -2,7 +2,8 @@ name: "Price Monitor"
 
 on:
   schedule:
-    - cron: "0 4,10,16,22 * * *"
+    # Runs twice a week (Tuesday and Friday at 04:00 UTC)
+    - cron: "0 4 * * 2,5"
   workflow_dispatch:
 
 permissions:
@@ -30,10 +31,10 @@ jobs:
 
       - name: "Run price monitor"
         env:
-          SMTP_HOST:    ${{ secrets.SMTP_HOST }}
-          SMTP_PORT:    ${{ secrets.SMTP_PORT }}
-          SMTP_USER:    ${{ secrets.SMTP_USER }}
-          SMTP_PASS:    ${{ secrets.SMTP_PASS }}
+          SMTP_HOST:     ${{ secrets.SMTP_HOST }}
+          SMTP_PORT:     ${{ secrets.SMTP_PORT }}
+          SMTP_USER:     ${{ secrets.SMTP_USER }}
+          SMTP_PASS:     ${{ secrets.SMTP_PASS }}
           SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
           NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
         run: python src/monitor.py
