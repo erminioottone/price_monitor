@@ -16,14 +16,5 @@
     "price_index": 1,
     "threshold_pct": 2,
     "active": true
-  },
-  {
-    "id": "xero-scrambler-trail",
-    "name": "Xero Shoes Scrambler Trail Low WP Men",
-    "url": "https://xeroshoes.eu/products/scrambler-trail-low-wp-men",
-    "css_selector": null,
-    "price_index": 0,
-    "threshold_pct": 2,
-    "active": true
   }
 ]
