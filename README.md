@@ -8,7 +8,6 @@ Monitors prices automatically via GitHub Actions — checks 4x/day, sends email 
 |---------|-----|-----------------|
 | Orca Freedive Zen Hombre | https://www.orca.com/es-es/hombre/neoprenos/apnea | 449 EUR |
 | Orca Freedive Mantra Hombre | https://www.orca.com/es-es/hombre/neoprenos/apnea | 349 EUR |
-| Xero Shoes Scrambler Trail Low WP Men | https://xeroshoes.eu/products/scrambler-trail-low-wp-men | 150 EUR |
 
 ## One-time setup (10 minutes)
 
