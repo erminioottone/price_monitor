@@ -1,20 +1,12 @@
 [
   {
-    "id": "orca-zen-freedive",
-    "name": "Orca Neopreno Freedive Zen Hombre",
-    "url": "https://www.orca.com/es-es/hombre/neoprenos/apnea",
+    "id": "molchanovs-core-silicone-bifins",
+    "name": "Molchanovs CORE Silicone Bifins",
+    "url": "https://www.molchanovs.com/collections/freediving-fins/products/core-silicone-bifins",
     "css_selector": null,
     "price_index": 0,
-    "threshold_pct": 2,
-    "active": true
-  },
-  {
-    "id": "orca-mantra-freedive",
-    "name": "Orca Neopreno Freedive Mantra Hombre",
-    "url": "https://www.orca.com/es-es/hombre/neoprenos/apnea",
-    "css_selector": null,
-    "price_index": 1,
-    "threshold_pct": 2,
+    "threshold_pct": 0,
+    "currency": "USD",
     "active": true
   }
 ]
