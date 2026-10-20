@@ -35,8 +35,8 @@ PRICES_FILE   = BASE_DIR / "prices.json"
 
 def clean_price(value):
     s = str(value).strip()
-    s = re.sub(r'[€$£\s\xa0\u202f\u00a0]', '', s)
-    s = re.sub(r'(\d)[.](\d{3})(?:[,]|$)', r'\1\2', s)
+    s = re.sub(r'[â¬$Â£\s\xa0\u202f\u00a0]', '', s)
+    s = re.sub(r'(\d)[.](\d{3})(?=[,]|$)', r'\1\2', s)
     s = s.replace(',', '.')
     m = re.search(r'\d+(?:\.\d{1,2})?', s)
     return float(m.group()) if m else None
@@ -95,7 +95,7 @@ def extract_prices_from_html(html, min_price=10, max_price=5000):
 
     # 4. Currency text patterns as last resort
     if not prices:
-        for m in re.finditer(r'(\d{2,4}(?:[.,]\d{2}))\s*(?:€|EUR|USD|\$)', html):
+        for m in re.finditer(r'(\d{2,4}(?:[.,]\d{2}))\s*(?:â¬|EUR|USD|\$)', html):
             p = clean_price(m.group(1))
             if p and min_price < p < max_price and p not in seen:
                 prices.append(p); seen.add(p)
@@ -103,7 +103,7 @@ def extract_prices_from_html(html, min_price=10, max_price=5000):
     return sorted(prices)
 
 
-# ── ScraperAPI (bypasses Cloudflare with real headless browser) ──────────────
+# ââ ScraperAPI (bypasses Cloudflare with real headless browser) ââââââââââââââ
 
 def fetch_with_scraperapi(url, render_js=True):
     """
@@ -113,7 +113,7 @@ def fetch_with_scraperapi(url, render_js=True):
     """
     api_key = os.environ.get("SCRAPERAPI_KEY")
     if not api_key:
-        print("  [ScraperAPI] SCRAPERAPI_KEY not set — skipping")
+        print("  [ScraperAPI] SCRAPERAPI_KEY not set â skipping")
         return None
 
     params = {
@@ -135,7 +135,7 @@ def fetch_with_scraperapi(url, render_js=True):
     return None
 
 
-# ── Shopify JSON endpoint (always works, no auth needed) ──────────────────────
+# ââ Shopify JSON endpoint (always works, no auth needed) ââââââââââââââââââââââ
 
 def fetch_shopify_price(url, price_index=0):
     handle   = url.rstrip('/').split('/products/')[-1].split('?')[0]
@@ -152,7 +152,7 @@ def fetch_shopify_price(url, price_index=0):
     return prices[idx] if idx < len(prices) else prices[0]
 
 
-# ── Orca via ScraperAPI ───────────────────────────────────────────────────────
+# ââ Orca via ScraperAPI âââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 # Direct product page URLs (more reliable than category page)
 ORCA_URLS = {
@@ -186,7 +186,7 @@ def fetch_orca_price(price_index=0):
     return None
 
 
-# ── Generic fallback ──────────────────────────────────────────────────────────
+# ââ Generic fallback ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 def fetch_generic(url, price_index=0):
     # Try direct with realistic browser headers
@@ -219,7 +219,7 @@ def fetch_generic(url, price_index=0):
     return None
 
 
-# ── Router ───────────────────────────────────────────────────────────────────
+# ââ Router âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 def get_price(url, css_selector=None, price_index=0):
     print(f"  URL: {url}")
@@ -236,7 +236,7 @@ def get_price(url, css_selector=None, price_index=0):
         except Exception:
             pass
 
-    # Orca → always use ScraperAPI
+    # Orca â always use ScraperAPI
     if "orca.com" in url:
         return fetch_orca_price(price_index)
 
@@ -244,7 +244,7 @@ def get_price(url, css_selector=None, price_index=0):
     return fetch_generic(url, price_index)
 
 
-# ── Email ────────────────────────────────────────────────────────────────────
+# ââ Email ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 def send_email(subject, body_html):
     smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
@@ -291,7 +291,7 @@ def build_email_body(drops):
         "<div style='max-width:680px;margin:0 auto;background:#fff;border-radius:12px;"
         "box-shadow:0 4px 16px rgba(0,0,0,.08);overflow:hidden'>"
         "<div style='background:#01696f;padding:24px 32px'>"
-        "<h1 style='color:#fff;margin:0;font-size:20px'>Price Monitor — Weekly Price Drop Report</h1>"
+        "<h1 style='color:#fff;margin:0;font-size:20px'>Price Monitor â Weekly Price Drop Report</h1>"
         "<p style='color:#cedcd8;margin:4px 0 0;font-size:14px'>" + ts + "</p></div>"
         "<div style='padding:24px 32px'>"
         "<p style='color:#28251d;margin:0 0 20px'>Price drop(s) detected for <strong>"
@@ -309,7 +309,7 @@ def build_email_body(drops):
     )
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# ââ Main ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 def main():
     if not PRODUCTS_FILE.exists():
