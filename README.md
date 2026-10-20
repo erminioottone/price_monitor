@@ -1,13 +1,12 @@
 # Price Monitor
 
-Monitors prices automatically via GitHub Actions — checks 4x/day, sends email alerts on changes.
+Monitors prices via GitHub Actions — runs every Friday and sends an email report only when a price drops.
 
 ## Currently monitored
 
 | Product | URL | Last known price |
 |---------|-----|-----------------|
-| Orca Freedive Zen Hombre | https://www.orca.com/es-es/hombre/neoprenos/apnea | 449 EUR |
-| Orca Freedive Mantra Hombre | https://www.orca.com/es-es/hombre/neoprenos/apnea | 349 EUR |
+| Molchanovs CORE Silicone Bifins | https://www.molchanovs.com/collections/freediving-fins/products/core-silicone-bifins | 125.00 USD |
 
 ## One-time setup (10 minutes)
 
@@ -33,7 +32,7 @@ Enable 2FA then go to https://myaccount.google.com/apppasswords
 GitHub repo > Actions > "Price Monitor" > "Run workflow"
 
 ## Schedule
-Runs at 04:00, 10:00, 16:00, 22:00 UTC (~120 min/month = 6% of free tier).
+Runs every Friday at 09:00 UTC (11:00 Paris time). Sends an email only if the price dropped since the previous check. The first run after adding a product records its baseline price without sending an email.
 
 ## Adding more products
 Open dashboard.html in your browser to manage products visually.
