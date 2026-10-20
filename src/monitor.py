@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
-"""Price Monitor - fetches prices and sends email alerts on changes.
+"""Price Monitor - weekly price checks with email report on price drops.
 
-Orca.com is protected by Cloudflare Enterprise and blocks all automated
-server-side requests. We use ScraperAPI (free tier: 1000 req/month) which
-renders pages with a real headless browser to bypass Cloudflare.
+Runs every Friday via GitHub Actions. An email report is sent ONLY when
+a price dropped since the previous check (rises and unchanged prices are
+recorded but not reported).
+
+Shopify product pages are read through their public .json endpoint.
+Cloudflare-protected sites (e.g. Orca.com) can be fetched via ScraperAPI
+(free tier: 1000 req/month) which renders pages with a real headless
+browser.
 
 Setup: sign up at https://www.scraperapi.com (free, no credit card needed)
        and add SCRAPERAPI_KEY as a GitHub Actions secret.
@@ -88,9 +93,9 @@ def extract_prices_from_html(html, min_price=10, max_price=5000):
         if p and min_price < p < max_price and p not in seen:
             prices.append(p); seen.add(p)
 
-    # 4. EUR text patterns as last resort
+    # 4. Currency text patterns as last resort
     if not prices:
-        for m in re.finditer(r'(\d{2,4}(?:[.,]\d{2}))\s*(?:€|EUR)', html):
+        for m in re.finditer(r'(\d{2,4}(?:[.,]\d{2}))\s*(?:€|EUR|USD|\$)', html):
             p = clean_price(m.group(1))
             if p and min_price < p < max_price and p not in seen:
                 prices.append(p); seen.add(p)
@@ -103,7 +108,7 @@ def extract_prices_from_html(html, min_price=10, max_price=5000):
 def fetch_with_scraperapi(url, render_js=True):
     """
     Fetch via ScraperAPI which uses real Chrome to bypass Cloudflare.
-    Free tier: 1000 requests/month (plenty for 4x/day × 2 products = ~240/month).
+    Free tier: 1000 requests/month (plenty for weekly checks).
     Sign up: https://www.scraperapi.com
     """
     api_key = os.environ.get("SCRAPERAPI_KEY")
@@ -130,7 +135,7 @@ def fetch_with_scraperapi(url, render_js=True):
     return None
 
 
-# ── Shopify JSON endpoint (always works, no auth needed) ─────────────────────
+# ── Shopify JSON endpoint (always works, no auth needed) ──────────────────────
 
 def fetch_shopify_price(url, price_index=0):
     handle   = url.rstrip('/').split('/products/')[-1].split('?')[0]
@@ -176,7 +181,6 @@ def fetch_orca_price(price_index=0):
     if html:
         prices = extract_prices_from_html(html)
         if prices:
-            print(f"  [Orca category] prices: {prices}")
             return prices[idx] if idx < len(prices) else prices[0]
 
     return None
@@ -215,7 +219,7 @@ def fetch_generic(url, price_index=0):
     return None
 
 
-# ── Router ────────────────────────────────────────────────────────────────────
+# ── Router ───────────────────────────────────────────────────────────────────
 
 def get_price(url, css_selector=None, price_index=0):
     print(f"  URL: {url}")
@@ -240,7 +244,7 @@ def get_price(url, css_selector=None, price_index=0):
     return fetch_generic(url, price_index)
 
 
-# ── Email ─────────────────────────────────────────────────────────────────────
+# ── Email ────────────────────────────────────────────────────────────────────
 
 def send_email(subject, body_html):
     smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
@@ -260,11 +264,12 @@ def send_email(subject, body_html):
     print(f"  Email sent to {to_addr}")
 
 
-def build_email_body(changes):
+def build_email_body(drops):
     rows = ""
-    for c in changes:
+    for c in drops:
         diff  = c["new"] - c["old"]
         pct   = (diff / c["old"] * 100) if c["old"] else 0
+        cur   = c.get("currency", "EUR")
         label = "DROP" if diff < 0 else "RISE"
         color = "#437a22" if diff < 0 else "#a12c7b"
         arrow = "v" if diff < 0 else "^"
@@ -273,9 +278,9 @@ def build_email_body(changes):
             "<a href='" + c["url"] + "' style='color:#01696f;font-weight:600;text-decoration:none'>"
             + c["name"] + "</a></td>"
             "<td style='padding:10px 16px;border-bottom:1px solid #e5e7eb;text-align:center'>"
-            + f"{c['old']:.2f}" + " EUR</td>"
+            + f"{c['old']:.2f}" + " " + cur + "</td>"
             "<td style='padding:10px 16px;border-bottom:1px solid #e5e7eb;text-align:center;"
-            "font-weight:700;color:" + color + "'>" + f"{c['new']:.2f}" + " EUR</td>"
+            "font-weight:700;color:" + color + "'>" + f"{c['new']:.2f}" + " " + cur + "</td>"
             "<td style='padding:10px 16px;border-bottom:1px solid #e5e7eb;text-align:center'>"
             + arrow + " " + label + " " + f"{abs(pct):.1f}" + "%</td></tr>"
         )
@@ -286,11 +291,11 @@ def build_email_body(changes):
         "<div style='max-width:680px;margin:0 auto;background:#fff;border-radius:12px;"
         "box-shadow:0 4px 16px rgba(0,0,0,.08);overflow:hidden'>"
         "<div style='background:#01696f;padding:24px 32px'>"
-        "<h1 style='color:#fff;margin:0;font-size:20px'>Price Monitor Alert</h1>"
+        "<h1 style='color:#fff;margin:0;font-size:20px'>Price Monitor — Weekly Price Drop Report</h1>"
         "<p style='color:#cedcd8;margin:4px 0 0;font-size:14px'>" + ts + "</p></div>"
         "<div style='padding:24px 32px'>"
-        "<p style='color:#28251d;margin:0 0 20px'>Price changes detected for <strong>"
-        + str(len(changes)) + "</strong> product(s):</p>"
+        "<p style='color:#28251d;margin:0 0 20px'>Price drop(s) detected for <strong>"
+        + str(len(drops)) + "</strong> product(s):</p>"
         "<table style='width:100%;border-collapse:collapse;font-size:14px'>"
         "<thead><tr style='background:#f3f0ec'>"
         "<th style='padding:10px 16px;text-align:left;color:#7a7974'>Product</th>"
@@ -313,7 +318,7 @@ def main():
 
     products = json.loads(PRODUCTS_FILE.read_text())
     history  = json.loads(PRICES_FILE.read_text()) if PRICES_FILE.exists() else {}
-    changes  = []
+    drops    = []
     now_str  = datetime.now(timezone.utc).isoformat()
 
     for product in products:
@@ -327,6 +332,7 @@ def main():
         selector    = product.get("css_selector")
         price_index = product.get("price_index", 0)
         threshold   = float(product.get("threshold_pct", 2))
+        currency    = product.get("currency", "EUR")
 
         print(f"\nChecking: {name}")
         price = get_price(url, selector, price_index)
@@ -335,40 +341,43 @@ def main():
             print(f"  ERROR: Could not extract price for {name}")
             continue
 
-        print(f"  Current price: {price:.2f} EUR")
+        print(f"  Current price: {price:.2f} {currency}")
         entry = {"price": price, "checked_at": now_str}
 
         if pid not in history:
-            print(f"  First check - recording {price:.2f} EUR as baseline")
+            print(f"  First check - recording {price:.2f} {currency} as baseline")
             history[pid] = {"name": name, "url": url, "history": [entry]}
         else:
             old_price = history[pid]["history"][-1]["price"]
             history[pid]["history"].append(entry)
             history[pid]["history"] = history[pid]["history"][-90:]
-            diff_pct = abs(price - old_price) / old_price * 100 if old_price else 0
-            if diff_pct > max(threshold, 0.01):
-                print(f"  ALERT: {old_price:.2f} -> {price:.2f} EUR ({diff_pct:.1f}%)")
-                changes.append({"name": name, "url": url, "old": old_price, "new": price})
+            drop_pct = (old_price - price) / old_price * 100 if old_price else 0
+            if price < old_price and drop_pct > max(threshold, 0.01):
+                print(f"  DROP: {old_price:.2f} -> {price:.2f} {currency} ({drop_pct:.1f}% drop)")
+                drops.append({
+                    "name": name, "url": url,
+                    "old": old_price, "new": price,
+                    "currency": currency,
+                })
             else:
-                print(f"  No change (was {old_price:.2f}, threshold: {threshold}%)")
+                print(f"  No drop (was {old_price:.2f} {currency}, threshold: {threshold}%)")
 
         time.sleep(5)
 
     PRICES_FILE.write_text(json.dumps(history, indent=2, ensure_ascii=False))
     print(f"\nSaved price history.")
 
-    if changes:
+    if drops:
         try:
             send_email(
-                f"[Price Monitor] {len(changes)} price change(s) detected",
-                build_email_body(changes)
+                f"[Price Monitor] Weekly report: {len(drops)} price drop(s)",
+                build_email_body(drops)
             )
         except KeyError as e:
             print(f"Email not sent - missing env var: {e}", file=sys.stderr)
     else:
-        print("No price changes detected.")
+        print("No price drops detected - no report sent.")
 
 
 if __name__ == "__main__":
     main()
-       
